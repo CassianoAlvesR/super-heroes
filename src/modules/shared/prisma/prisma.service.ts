@@ -1,9 +1,23 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnApplicationBootstrap, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
+export class PrismaService extends PrismaClient implements OnModuleInit, OnApplicationBootstrap {
   async onModuleInit() {
     await this.$connect();
+  }
+
+  async onApplicationBootstrap() {
+    this.performanceMeasurementMiddleware();
+  }
+
+  private performanceMeasurementMiddleware() {
+    this.$use(async (params, next) => {
+      const before = Date.now();
+      const result = await next(params);
+      const after = Date.now();
+      console.log(`Consulta ${params.model}.${params.action} levou ${after - before}ms`);
+      return result;
+    });
   }
 }
