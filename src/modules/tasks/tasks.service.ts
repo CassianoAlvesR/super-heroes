@@ -2,23 +2,19 @@ import { Inject, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/comm
 import { PrismaService } from '../shared/prisma/prisma.service';
 import { DayjsService } from '../shared/dayjs/dayjs.module';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { MarvelConfig } from 'src/config/configuration';
-import { createHash } from 'crypto';
-import { MarvelHero } from './interfaces/marvel-hero';
 import { Hero } from '@prisma/client';
+import { MarvelService } from '../shared/marvel/marvel.service';
 
 @Injectable()
 export class TasksService implements OnApplicationBootstrap {
   private readonly logger = new Logger('Tasks');
-  private readonly marvel = Object.freeze(this.configService.getOrThrow<MarvelConfig>('marvel'));
 
   constructor(
     @Inject('DAYJS') private readonly dayjs: DayjsService,
     private readonly prismaService: PrismaService,
     private configService: ConfigService,
-    private httpService: HttpService,
+    private marvelService: MarvelService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -29,7 +25,7 @@ export class TasksService implements OnApplicationBootstrap {
 
   @Cron(CronExpression.EVERY_WEEK)
   private async updateHeroes(page = 0) {
-    const marvelHeroes = await this.fetchHeroes(page);
+    const marvelHeroes = await this.marvelService.fetchHeroes(page);
 
     if (!marvelHeroes.length) {
       this.logger.verbose('\nNo more heroes to save');
@@ -63,7 +59,7 @@ export class TasksService implements OnApplicationBootstrap {
                   collectionURI: marvelHero[type].collectionURI,
                   returned: marvelHero[type].returned,
                   items: {
-                    create: marvelHero.comics.items.map((item) => ({
+                    create: marvelHero[type].items.map((item) => ({
                       resourceURI: item.resourceURI,
                       name: item.name,
                       type: item.type,
@@ -145,21 +141,5 @@ export class TasksService implements OnApplicationBootstrap {
     );
 
     this.updateHeroes(page + 1);
-  }
-
-  private async fetchHeroes(page: number) {
-    const limit = 100;
-    const offset = page * limit;
-    const url = `/v1/public/characters?limit=${limit}&offset=${offset}`;
-
-    const { privateKey, publicKey } = this.marvel;
-    const ts = Date.now();
-    const hash = createHash('md5').update(`${ts}${privateKey}${publicKey}`).digest('hex');
-    const response = await this.httpService.axiosRef.get(
-      `${url}&ts=${ts}&apikey=${publicKey}&hash=${hash}`,
-    );
-    const heroes: MarvelHero[] = response.data.data.results;
-
-    return heroes;
   }
 }
